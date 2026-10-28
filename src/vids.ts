@@ -20,6 +20,8 @@ export const UI = {
   ingredients: "Ingredientes",
   addElements: "Adicionar avatar ou elementos",
   upload: "Fazer upload",
+  browse: "Procurar",
+  attached: /^Remover (imagem|vídeo)/,
   addImage: "Adicionar imagem",
   addVideo: "Adicionar vídeo",
   avatarButton: "Avatar",
@@ -212,6 +214,31 @@ async function chooseFile(page: Page, click: () => Promise<void>, timeout = UI_T
   return chooser;
 }
 
+type Upload = string | { name: string; mimeType: string; buffer: Buffer };
+const pickerFrame = (page: Page) => page.frames().find((f) => /docs\.google\.com\/picker/.test(f.url()));
+
+// Vids' upload buttons (Adicionar imagem, Adicionar vídeo, Ingredientes) open Google's file picker "Abrir um arquivo"
+// in an iframe (2026-10-28): option "Fazer upload" -> button "Procurar" -> the file chooser. The picker then closes
+// by itself. An older build opened the file chooser straight away, so that is still accepted.
+async function uploadThrough(page: Page, open: () => Promise<void>, file: Upload) {
+  const direct = page.waitForEvent("filechooser", { timeout: 6000 });
+  direct.catch(() => {});
+  await open();
+  let chooser = await direct.catch(() => null);
+  if (!chooser) {
+    let frame = pickerFrame(page);
+    for (let i = 0; i < 20 && !frame; i++) {
+      await page.waitForTimeout(500);
+      frame = pickerFrame(page);
+    }
+    if (!frame) throw new Error("Neither a file chooser nor Google's file picker opened.");
+    await frame.getByRole("option", { name: UI.upload, exact: true }).click();
+    chooser = await chooseFile(page, () => frame!.getByRole("button", { name: UI.browse, exact: true }).click());
+  }
+  await chooser.setFiles(file);
+  for (let i = 0; i < 60 && pickerFrame(page); i++) await page.waitForTimeout(500);
+}
+
 // The Workspace image-terms dialog shows once per account; the user accepted it on 2026-10-22. After it the opener
 // has to be pressed again.
 async function acceptTermsIfAsked(page: Page, reopen: () => Promise<void>) {
@@ -252,30 +279,30 @@ async function attachReferences(page: Page, files: string[]) {
         await panel.getByRole("group", { name: UI.addElements }).getByRole("button", { name: UI.upload, exact: true }).click();
       }
     };
-    const chooser = await chooseFile(page, async () => {
+    const before = await panel.getByRole("button", { name: /^Remover imagem/ }).count();
+    await uploadThrough(page, async () => {
       await open();
       if (first) await acceptTermsIfAsked(page, open);
-    });
-    await chooser.setFiles(await asPngOrJpg(page, file));
-    await panel.getByText(`@Imagem${index + 1}`).waitFor({ state: "visible", timeout: 60_000 });
+    }, await asPngOrJpg(page, file));
+    // Each attached ingredient shows as "@ImagemN" in the prompt (2026-10-22) and gets its own "Remover imagem".
+    await panel
+      .getByText(`@Imagem${index + 1}`)
+      .or(panel.getByRole("button", { name: /^Remover imagem/ }).nth(before))
+      .first()
+      .waitFor({ state: "visible", timeout: 60_000 });
   }
 }
 
-// Animar ("Adicionar imagem"), Editar and Estender ("Adicionar vídeo"): the button opens either the file chooser
-// directly or a menu with "Fazer upload".
-async function attachMedia(page: Page, tab: Tab, button: string, file: string | { name: string; mimeType: string; buffer: Buffer }) {
+// Animar ("Adicionar imagem"), Editar and Estender ("Adicionar vídeo"). Once attached the panel shows the upload's
+// preview and "Remover imagem" (checked on Animar 2026-10-28); a video takes longer to process.
+async function attachMedia(page: Page, tab: Tab, button: string, file: Upload) {
   const panel = tabPanel(page, tab);
   const add = panel.getByRole("button", { name: button });
-  const direct = page.waitForEvent("filechooser", { timeout: 8000 });
-  direct.catch(() => {});
-  await add.click();
-  await acceptTermsIfAsked(page, () => add.click());
-  const chooser =
-    (await direct.catch(() => null)) ??
-    (await chooseFile(page, () => page.getByRole("menuitem", { name: UI.upload }).or(page.getByRole("button", { name: UI.upload })).first().click()));
-  await chooser.setFiles(file);
-  // Uploading a video takes a while; the "Remover" button shows once it is attached.
-  await panel.getByRole("button", { name: "Remover" }).or(panel.getByRole("img")).first().waitFor({ state: "visible", timeout: 120_000 });
+  await uploadThrough(page, async () => {
+    await add.click();
+    await acceptTermsIfAsked(page, () => add.click());
+  }, file);
+  await panel.getByRole("button", { name: UI.attached }).first().waitFor({ state: "visible", timeout: 180_000 });
   await page.waitForTimeout(2000);
 }
 

@@ -41,9 +41,16 @@ queue, Studio panel, captions, assemble and narration came from there; the drive
 
 ## Status (2026-10-28)
 
-Built and compiling. Mapped live but NOT yet run end to end through this code: every generation path. Ported from the
-API - Vids-new driver, which was verified live on 2026-10-22: new video + aspect, Criar with ingredients, Animar with a
-start image, settings (aspect radio, duration slider), Gerar → progress bar → Inserir, cancel-and-retry on a stuck
-generation, Gerar uma imagem with aspect/style, Arquivo → Baixar MP4. New in this code and unverified: per-clip download
-from the `<video>` source after Inserir, the Editar / Estender uploads ("Adicionar vídeo"), the Avatar picker
-(dialog "Avatares" → radio "<Nome>: …" → `Selecione`), the 1080p menu, and the home-screen video list.
+Verified live through this code (e2e.mjs, project TesteVids):
+- Still: new Vids document from vids.new (aspect + "Criar vídeos com IA"), Gerar uma imagem 16:9 → scene-01.jpg in ~25 s.
+- Clip (one paid 3 s take, the user's OK): Animar from that still → upload → settings (3 s) → Gerar (~60 s) → Inserir →
+  per-clip download from the `<video>` source → scene-02.mp4, 3.008 s, 1280x720 + audio, opening on the still. Vids
+  stamps a small Gemini sparkle in the bottom-right corner of AI clips.
+- UPLOADS GO THROUGH GOOGLE'S PICKER now: "Adicionar imagem" (and Ingredientes) opens "Abrir um arquivo" in an
+  iframe (docs.google.com/picker): option `Fazer upload` → button `Procurar` → file chooser; the picker closes itself
+  and the panel shows img "Visualização da imagem enviada" + button "Remover imagem". uploadThrough() handles it and
+  still accepts a direct file chooser. The first run failed here BEFORE Gerar (no quota used).
+Ported from API - Vids-new (verified there 2026-10-22) and not yet re-run here: Criar with ingredients, cancel-and-retry on a stuck
+generation, Arquivo → Baixar MP4. New and unverified: the Editar / Estender uploads ("Adicionar vídeo", attached state
+assumed "Remover vídeo"), the Avatar picker (dialog "Avatares" → radio "<Nome>: …" → `Selecione`), the 1080p menu,
+and the home-screen video list. `scripts/probe*.mjs` attach to the vids-mcp Chrome for live mapping without generating.
