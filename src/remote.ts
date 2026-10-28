@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Core } from "./core.js";
 import { PORT, TOKEN_FILE } from "./server.js";
 
-// Used when another flow-mcp process (Studio or a second Claude client) already owns the Flow tab and queue.
+// Used when another vids-mcp process (Studio or a second Claude client) already owns the Vids tab and queue.
 async function call(method: string, args: unknown): Promise<unknown> {
   const res = await fetch(`http://127.0.0.1:${PORT}/api/${method}`, {
     method: "POST",
@@ -10,7 +10,7 @@ async function call(method: string, args: unknown): Promise<unknown> {
     body: JSON.stringify(args ?? {}),
   });
   const data = (await res.json()) as { error?: string };
-  if (!res.ok) throw new Error(data.error ?? `flow-mcp owner process answered ${res.status}`);
+  if (!res.ok) throw new Error(data.error ?? `vids-mcp owner process answered ${res.status}`);
   return data;
 }
 
@@ -29,7 +29,6 @@ export class RemoteCore implements Core {
   characters = () => call("characters", {});
   character_edit = (a: unknown) => call("character_edit", a);
   edit = (a: unknown) => call("edit", a);
-  trash = (a: unknown) => call("trash", a);
   discard = (a: unknown) => call("discard", a);
   set_key = (a: unknown) => call("set_key", a);
   continue_shot = (a: unknown) => call("continue_shot", a);

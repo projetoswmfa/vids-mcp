@@ -7,8 +7,8 @@ import { promisify } from "node:util";
 import { FFMPEG_HINT, IS_WIN, powershell, psQuote } from "./platform.js";
 
 const run = promisify(execFile);
-const FFMPEG = process.env.FLOW_MCP_FFMPEG ?? "ffmpeg";
-const FFPROBE = process.env.FLOW_MCP_FFPROBE ?? "ffprobe";
+const FFMPEG = process.env.VIDS_MCP_FFMPEG ?? "ffmpeg";
+const FFPROBE = process.env.VIDS_MCP_FFPROBE ?? "ffprobe";
 
 export interface AssembleOptions {
   dir: string;
@@ -71,7 +71,7 @@ export async function extractAudio(video: string, target: string): Promise<{ out
   return { output: target, duration: Number(stdout.trim()) };
 }
 
-const SAY = process.env.FLOW_MCP_SAY ?? "say";
+const SAY = process.env.VIDS_MCP_SAY ?? "say";
 
 // The voices this computer has installed. On a Mac that is `say` (Premium voices appear as soon as the user downloads
 // them in System Settings); on Windows it is the built-in speech engine, the voices under Settings > Time & language >

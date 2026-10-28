@@ -7,7 +7,7 @@ export interface Technique {
 }
 
 // Prompt fragments for common film moves. One per scene: two camera instructions fight each other.
-export const TECHNIQUES: Technique[] = [
+const ALL: Technique[] = [
   // camera
   { id: "dolly-zoom", category: "camera", name: "Dolly zoom (vertigo)", phrase: "Dolly zoom: the camera tracks backward while zooming in, the subject stays the same size in frame while the background stretches away behind them." },
   { id: "snap-zoom-eyes", category: "camera", name: "Snap zoom to eyes", phrase: "Sudden snap zoom from a medium shot straight into an extreme close-up of the eyes, ending perfectly sharp." },
@@ -52,5 +52,8 @@ export const TECHNIQUES: Technique[] = [
   { id: "img-cinematic", category: "image", name: "Cinematic keyframe", phrase: "Cinematic film still, 85mm lens, shallow depth of field, golden hour light, subtle film grain." },
   { id: "img-insert-person", category: "image", name: "Person into scene", needs: "two reference_images: the person and the scene", phrase: "Place the person from the first image into the scene from the second image with matching light and perspective; keep the face unchanged." },
 ];
+
+// Vids animates from a first frame only (no last frame), so the first-to-last-frame transitions are left out.
+export const TECHNIQUES = ALL.filter((t) => !t.needs?.includes("last_frame"));
 
 export const techniqueById = (id: string) => TECHNIQUES.find((t) => t.id === id);

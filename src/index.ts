@@ -12,7 +12,7 @@ const role = await startServer(local);
 const core: Core = role === "client" ? new RemoteCore() : local;
 const studio = role === "none" ? undefined : `http://127.0.0.1:${PORT}`;
 
-const server = new McpServer({ name: "flow-mcp", version: "0.2.0" });
+const server = new McpServer({ name: "vids-mcp", version: "0.1.0" });
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 const reply = async (work: Promise<unknown>, extra: object = {}): Promise<ToolResult> => {
@@ -25,12 +25,12 @@ const reply = async (work: Promise<unknown>, extra: object = {}): Promise<ToolRe
   }
 };
 
-// Most AI apps stop waiting on a tool after about a minute (the MCP default, and Codex's), but Flow is often slower: a
+// Most AI apps stop waiting on a tool after about a minute (the MCP default, and Codex's), but Vids is often slower:
 // character edit takes one to two minutes. The work carried on while the app reported "Request timed out", so finished
 // work looked failed - and a shot was once paid for twice. No call holds on longer than this now; anything slower hands
-// back a task id and keeps going, and flow_wait collects the answer.
-// FLOW_MCP_PATIENCE_MS lowers it for an app with a shorter limit (and lets a test reach the slow path quickly).
-const PATIENCE_MS = Number(process.env.FLOW_MCP_PATIENCE_MS ?? 45_000);
+// back a task id and keeps going, and vids_wait collects the answer.
+// VIDS_MCP_PATIENCE_MS lowers it for an app with a shorter limit (and lets a test reach the slow path quickly).
+const PATIENCE_MS = Number(process.env.VIDS_MCP_PATIENCE_MS ?? 45_000);
 const WAIT_MS = Math.max(5_000, PATIENCE_MS - 5_000);
 type Task = { task_id: string; tool: string; started: string; status: "running" | "done" | "failed"; result?: unknown; error?: string };
 const tasks = new Map<string, Task>();
@@ -56,7 +56,7 @@ const patient = async (tool: string, work: Promise<unknown>): Promise<unknown> =
   return {
     still_working: true,
     task_id: task.task_id,
-    note: `Flow is still on it - this is not a failure. Call flow_wait with job_ids ["${task.task_id}"] for the result, and do not call ${tool} again: the work has not stopped.`,
+    note: `Vids is still on it - this is not a failure. Call vids_wait with job_ids ["${task.task_id}"] for the result, and do not call ${tool} again: the work has not stopped.`,
   };
 };
 
@@ -74,7 +74,7 @@ async function waitFor({ job_ids, timeout_seconds }: { job_ids?: string[]; timeo
       tasks.get(id) ?? {
         task_id: id,
         status: "unknown",
-        note: "This tool restarted since that call, so its answer is lost. Check Flow (flow_assets, flow_characters) for what it did before running it again.",
+        note: "This tool restarted since that call, so its answer is lost. Check Vids (vids_videos, vids_characters) for what it did before running it again.",
       },
   );
   const tasksFinished = done.every((t) => t.status !== "running");
@@ -85,23 +85,23 @@ async function waitFor({ job_ids, timeout_seconds }: { job_ids?: string[]; timeo
 }
 
 server.registerTool(
-  "flow_status",
+  "vids_status",
   {
-    title: "Flow status",
+    title: "Vids status",
     description:
-      "Check the Flow Chrome session (signed in, project open, plan, credits left) and the generation queue. Call this first; it says what the user must fix before generating, and returns the prompt playbook.",
+      "Check the Vids Chrome session (signed in, page language) and the generation queue, and list this tool's projects, Vids' stock avatars and image styles. Call this first; it says what the user must fix before generating, and returns the prompt playbook.",
     inputSchema: shapes.status,
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
-  (args) => reply(core.status(args), { studio, playbook: PLAYBOOK, ...(tasks.size ? { slow_calls: [...tasks.values()].map(({ result, ...t }) => t) } : {}) }),
+  () => reply(patient("vids_status", core.status({})), { studio, playbook: PLAYBOOK, ...(tasks.size ? { slow_calls: [...tasks.values()].map(({ result, ...t }) => t) } : {}) }),
 );
 
 server.registerTool(
-  "flow_generate",
+  "vids_generate",
   {
-    title: "Queue Flow generations",
+    title: "Queue Vids generations",
     description:
-      "Queue one clip or image per scene in the open Flow project. Runs one at a time with human-like pauses and spends the user's Google AI credits (approx. per video: Omni 1.1 Flash 7-12, Veo 3.1 Lite 10, Fast 20, Quality 100; images 0). Each scene is checked against max_credits using Flow's own quote before anything is spent. Returns job ids immediately; use flow_wait for results.",
+      "Queue one clip or still per scene in a Google Vids video (one Vids video per project, one scene per clip). Video clips use Vids' Omni model (3-10 s, 720p or 1080p): text with up to 3 reference images and/or a stock avatar (Criar), from a first frame (Animar), or carrying on the previous scene (chain_previous → Estender). Stills use Gerar uma imagem. Runs one at a time with human-like pauses; every video clip uses the account's Vids generation quota and Vids shows no price, so tell the user how many clips will be made before calling. Returns job ids at once; use vids_wait for the files.",
     inputSchema: shapes.generate,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
@@ -109,9 +109,9 @@ server.registerTool(
 );
 
 server.registerTool(
-  "flow_wait",
+  "vids_wait",
   {
-    title: "Wait for Flow jobs",
+    title: "Wait for Vids jobs",
     description:
       "Wait for queued jobs (default: all), or for the task_id of a call that answered still_working, then return their status, results and file paths. Comes back within about 40 s even when they are still running: call again until finished is true.",
     inputSchema: shapes.wait,
@@ -121,9 +121,9 @@ server.registerTool(
 );
 
 server.registerTool(
-  "flow_cancel",
+  "vids_cancel",
   {
-    title: "Cancel a queued Flow job",
+    title: "Cancel a queued Vids job",
     description: "Cancel a job that has not started yet. A running generation cannot be cancelled.",
     inputSchema: shapes.cancel,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
@@ -132,10 +132,11 @@ server.registerTool(
 );
 
 server.registerTool(
-  "flow_retry",
+  "vids_retry",
   {
-    title: "Retry failed Flow jobs",
-    description: "Put failed jobs back in the queue with the same settings and file names (default: all failed jobs). Scenes already retry once on their own when Flow reports a failure. An image batch that finished with some images still failed (its job lists failed_scenes) is not run again whole: only those images are made again, saved under their own scene numbers.",
+    title: "Retry failed Vids jobs",
+    description:
+      "Put failed jobs back in the queue with the same settings and file names (default: all failed jobs). An image batch that finished with some stills failed (its job lists failed_scenes) only makes those again, under their own scene numbers. A clip that failed after Gerar may already have used quota: check the project's Vids video first.",
     inputSchema: shapes.retry,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
@@ -143,34 +144,34 @@ server.registerTool(
 );
 
 server.registerTool(
-  "flow_assets",
+  "vids_videos",
   {
-    title: "List project media",
-    description: "List the images and videos in the open Flow project (title and kind). Titles can be used as 'asset:<title>' in flow_generate or with flow_download.",
+    title: "List Vids videos",
+    description: "List this tool's projects (each one a Vids video with its address) and the titles in the account's recent Vids videos. Any title can be exported with vids_download.",
     inputSchema: shapes.assets,
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
-  (args) => reply(patient("flow_assets", core.assets(args))),
+  () => reply(patient("vids_videos", core.assets({}))),
 );
 
 server.registerTool(
-  "flow_download",
+  "vids_download",
   {
-    title: "Download existing project media",
+    title: "Export a whole Vids video",
     description:
-      "Download media that already exists in the Flow project, without regenerating it (no credits, including 1080p/2K upscales). Matches by the start of the title.",
+      "Render a whole Vids video as MP4 (Arquivo → Baixar → Vídeo MP4) and save it in a project folder: a project of this tool by name, or any video in the account by its exact title. No generation, no quota. Single clips are already downloaded by vids_generate.",
     inputSchema: shapes.download,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
-  (args) => reply(patient("flow_download", core.download(args))),
+  (args) => reply(patient("vids_download", core.download(args))),
 );
 
 server.registerTool(
-  "flow_agent_images",
+  "vids_images",
   {
-    title: "Fast image batch via Flow's agent",
+    title: "Batch of stills",
     description:
-      "Hand up to 50 image scenes to Flow's own Agent mode, which renders them all in parallel (minutes for a whole batch instead of one paced job per scene) and enriches each prompt itself. Images only, 0 credits. Pass `references` (characters, places, objects, each with a short name) to attach them once in the agent's composer, the way its + button does, and `scene_references` to say which scenes use which, so a whole story stays on-model. Scenes the agent drops are asked for again, then made one by one with their references. Less exact than flow_generate: the agent picks the wording, no techniques, and each image is matched back to its scene by its stored prompt. Returns a job id; use flow_wait.",
+      "Make up to 50 stills in one job with Vids' Gerar uma imagem, one after another in the project's video, saved as scene-NN. Vids takes no reference picture for stills, so repeat the full description of a recurring character in each scene. A still that fails does not stop the rest; vids_retry makes just the failed ones again. Returns a job id; use vids_wait.",
     inputSchema: shapes.agent,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
@@ -178,11 +179,11 @@ server.registerTool(
 );
 
 server.registerTool(
-  "flow_edit",
+  "vids_edit",
   {
-    title: "Edit an existing video",
+    title: "Edit a clip with Omni",
     description:
-      "Video-to-video edit of a clip already in the Flow project (relight, change weather/background, remove or restyle objects) using Flow's edit view. Queued like a generation; use flow_wait for the file. Spends credits without a prior quote (about 20 for a 4 s clip), so ask the user before calling.",
+      "Change a clip on this computer with Vids' Editar tab (Omni video-to-video): relight it, change the weather or background, remove or restyle objects. The clip is uploaded, edited and the result saved as edit-NN.mp4. Uses Vids generation quota, so ask the user first. Queued; use vids_wait.",
     inputSchema: shapes.edit,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
@@ -190,70 +191,58 @@ server.registerTool(
 );
 
 server.registerTool(
-  "flow_continue",
+  "vids_extend",
   {
-    title: "Continue a clip, keeping a character attached",
+    title: "Carry a clip on",
     description:
-      "Start a new clip from the last frame of one already in the project, for a continuous take across a cut. It saves the source clip's real final frame, animates it through Flow's agent mode, and downloads the result. mode 'exact' (default) gives an invisible join - the clip opens on the actual last frame - but attached characters are ignored, so the likeness must come from that frame; mode 'likeness' keeps a character or your avatar locked at the cost of an only-approximate opening frame. Flow cannot do both at once. Agent mode shows no credit quote beforehand, so ask the user before calling. Queued like a generation; use flow_wait for the file.",
+      "Make the next clip of a shot with Vids' Estender tab: a clip on this computer is uploaded and Omni continues it from where it ends, saved as shot-NN.mp4. Inside one vids_generate call, chain_previous does the same for the scene before. Uses Vids generation quota, so ask the user first. Queued; use vids_wait.",
     inputSchema: shapes.continue_shot,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
-  (args) => reply(patient("flow_continue", core.continue_shot(args))),
+  (args) => reply(core.continue_shot(args)),
 );
 
 server.registerTool(
-  "flow_trash",
-  {
-    title: "Move an item to Flow's Trash",
-    description:
-      "Move one image, video or scene in the open Flow project to Flow's Trash, by its exact title from flow_assets. Recoverable: Flow keeps it in Trash with a Restore button. Never deletes permanently. Flow asks no confirmation of its own, so confirm with the user before calling. Refuses if two items share the title.",
-    inputSchema: shapes.trash,
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-  },
-  (args) => reply(patient("flow_trash", core.trash(args))),
-);
-
-server.registerTool(
-  "flow_character",
+  "vids_character",
   {
     title: "Create a reusable character",
     description:
-      "Create a reusable Flow character (person, mascot, product) so it looks the same in every scene. Free. Give `describe` and Flow draws the portrait first, or `image` to use a picture you already have; optionally a personality and a stock voice. Afterwards pass 'asset:<name>' in a scene's reference_images.",
+      "Create a character kept on this computer: a portrait plus its written look. Give `describe` and Vids draws the portrait (Gerar uma imagem), or `image` for a picture you have. Scenes then pass 'asset:<name>' in reference_images: the portrait goes in as an ingredient and the look is quoted in the prompt, so it stays the same in every scene. For Vids' own talking avatars use a scene's `avatar` instead.",
     inputSchema: shapes.character,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
-  (args) => reply(patient("flow_character", core.character(args))),
+  (args) => reply(patient("vids_character", core.character(args))),
 );
 
 server.registerTool(
-  "flow_character_edit",
+  "vids_character_edit",
   {
-    title: "Restyle an existing character",
+    title: "Change a character's look",
     description:
-      "Change how an existing character looks without creating a new one (Flow redraws the portrait in place, free), and save the new portrait to <films>/_cast. The character keeps its name, personality and voice, so every scene that references it picks up the new look. Pass `look` with the full updated description so scene prompts stop quoting the old one. With no `change` it only saves the current portrait.",
+      "Give a character a new look: Vids draws the portrait again from the full new description (it cannot redraw from the old picture), and every later scene that names the character uses it.",
     inputSchema: shapes.character_edit,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
-  (args) => reply(patient("flow_character_edit", core.character_edit(args))),
+  (args) => reply(patient("vids_character_edit", core.character_edit(args))),
 );
 
 server.registerTool(
-  "flow_characters",
+  "vids_characters",
   {
     title: "List characters",
-    description: "List the reusable characters in the open Flow project. Each can be used in a scene as 'asset:<name>'.",
+    description: "List the characters kept on this computer, each with its portrait and look. Use one in a scene as 'asset:<name>'.",
     inputSchema: shapes.characters,
-    annotations: { readOnlyHint: true, openWorldHint: true },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
-  () => reply(patient("flow_characters", core.characters())),
+  () => reply(core.characters()),
 );
 
 server.registerTool(
-  "flow_techniques",
+  "vids_techniques",
   {
     title: "Film technique presets",
     description:
-      "List ready-made prompt phrases for camera moves, product shots, first→last-frame transitions and image commands. Pass an id as a scene's `technique` in flow_generate.",
+      "List ready-made prompt phrases for camera moves, product shots, transitions and image commands. Pass an id as a scene's `technique` in vids_generate.",
     inputSchema: shapes.techniques,
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   },
@@ -261,22 +250,22 @@ server.registerTool(
 );
 
 server.registerTool(
-  "flow_narrate",
+  "vids_narrate",
   {
-    title: "Record narration in a Flow voice",
+    title: "Record narration",
     description:
-      "Record narration as an .m4a, free and instantly. `engine: \"gemini\"` uses Google AI Studio's text-to-speech (the same voices Flow has, needs a free key in ~/.flow-mcp/gemini-key, and takes a `style` note like 'warmly, like a documentary narrator'); `engine: \"mac\"` uses a voice installed on this computer (macOS, or Windows' built-in speech voices). Neither costs credits or caps the length. flow_assemble can lay the result over a film.",
+      "Record narration as an .m4a, free and at any length. `engine: \"gemini\"` uses Google AI Studio's text-to-speech (needs a free key in ~/.vids-mcp/gemini-key, and takes a short `style` note like 'warmly'); `engine: \"mac\"` uses a voice installed on this computer (macOS, or Windows' built-in speech voices). vids_assemble can lay the result over a film.",
     inputSchema: shapes.narrate,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
-  (args) => reply(patient("flow_narrate", core.narrate(args))),
+  (args) => reply(patient("vids_narrate", core.narrate(args))),
 );
 
 server.registerTool(
-  "flow_voices",
+  "vids_voices",
   {
-    title: "List Flow voices",
-    description: "Narrator voices available for flow_narrate: Google AI Studio's (with whether a key is set up) and the English voices installed on this computer.",
+    title: "List narration voices",
+    description: "Narrator voices available for vids_narrate: Google AI Studio's (with whether a key is set up) and the voices installed on this computer.",
     inputSchema: shapes.voices,
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   },
@@ -284,39 +273,39 @@ server.registerTool(
 );
 
 server.registerTool(
-  "flow_assemble",
+  "vids_assemble",
   {
     title: "Assemble clips into one video",
     description:
-      "Join a project's downloaded scene clips in order into one MP4 (local ffmpeg, no credits). Keeps each clip's own sound and can lay a music track and a voiceover on top.",
+      "Join a project's downloaded clips in order into one MP4 (local ffmpeg, no quota). Keeps each clip's own sound and can lay a music track and a voiceover on top.",
     inputSchema: shapes.assemble,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
-  (args) => reply(patient("flow_assemble", core.assemble(args))),
+  (args) => reply(patient("vids_assemble", core.assemble(args))),
 );
 
 server.registerTool(
-  "flow_transcribe",
+  "vids_transcribe",
   {
     title: "Hear the words in a video or audio file",
     description:
-      "Transcribe a video or audio file on this computer with every word's start and end time (whisper.cpp, local and free, about 100 languages; pass `language` when you know it. The first call in English downloads a 148 MB speech model once, in any other language a 574 MB one). Use the times to check a take said the right words and to cut lines out of it for flow_assemble's voice_lines.",
+      "Transcribe a video or audio file on this computer with every word's start and end time (whisper.cpp, local and free, about 100 languages; pass `language` when you know it. The first call in English downloads a 148 MB speech model once, in any other language a 574 MB one). Use the times to check a take said the right words and to cut lines out of it for vids_assemble's voice_lines.",
     inputSchema: shapes.transcribe,
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
-  (args) => reply(patient("flow_transcribe", core.transcribe(args))),
+  (args) => reply(patient("vids_transcribe", core.transcribe(args))),
 );
 
 server.registerTool(
-  "flow_captions",
+  "vids_captions",
   {
     title: "Add captions to a video",
     description:
-      "Burn spoken-word captions into a video, in the style short-form apps use, for landscape or vertical footage (local and free: whisper.cpp hears the words on this computer, nothing is uploaded). Styles: bold (big capitals, the spoken word lights up), highlight, reveal, clean, boxed. Works in about 100 languages, including ones written without spaces (Japanese, Chinese, Thai) and right to left (Arabic, Hebrew); pass `language` (en, es, tr, ja...) whenever you know it. The first call downloads a speech model once: 148 MB for English, 574 MB for other languages. Saves <name>-captions.mp4 plus an .srt. Before calling this, call flow_transcribe, show the user the words with any likely mishearings fixed, and get their OK: then pass the agreed words as `text` (matching words keep their timing), so the video is made once, right.",
+      "Burn spoken-word captions into a video, in the style short-form apps use, for landscape or vertical footage (local and free: whisper.cpp hears the words on this computer, nothing is uploaded). Styles: bold (big capitals, the spoken word lights up), highlight, reveal, clean, boxed. Works in about 100 languages; pass `language` (pt, en, es...) whenever you know it. The first call downloads a speech model once: 148 MB for English, 574 MB for other languages. Saves <name>-captions.mp4 plus an .srt. Before calling this, call vids_transcribe, show the user the words with any likely mishearings fixed, and get their OK: then pass the agreed words as `text` (matching words keep their timing), so the video is made once, right.",
     inputSchema: shapes.captions,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
-  (args) => reply(patient("flow_captions", core.captions(args))),
+  (args) => reply(patient("vids_captions", core.captions(args))),
 );
 
 await server.connect(new StdioServerTransport());

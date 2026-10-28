@@ -8,12 +8,12 @@ await client.connect(new StdioClientTransport({ command: "node", args: ["dist/in
 const call = async (name, args = {}) =>
   JSON.parse((await client.callTool({ name, arguments: args }, undefined, { timeout: 960_000 })).content[0].text);
 
-console.log("STATUS", JSON.stringify((await call("flow_status")).flow));
-const gen = await call("flow_generate", { project, scenes: JSON.parse(scenesJson) });
+console.log("STATUS", JSON.stringify((await call("vids_status")).vids));
+const gen = await call("vids_generate", { project, scenes: JSON.parse(scenesJson) });
 console.log("QUEUED", gen.jobs.map((j) => j.id), gen.output_dir);
 let done;
 do {
-  done = await call("flow_wait", { timeout_seconds: 60 });
+  done = await call("vids_wait", { timeout_seconds: 60 });
   console.log(new Date().toISOString().slice(11, 19), done.pacing ?? "", done.jobs.map((j) => `${j.id}:${j.status}${j.progress ? ` ${j.progress}` : ""}`).join("  "));
 } while (!done.finished);
 console.log("RESULT", JSON.stringify(done.jobs, null, 1));

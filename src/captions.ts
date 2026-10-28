@@ -15,14 +15,14 @@ import { FFMPEG_HINT, IS_MAC, IS_WIN } from "./platform.js";
 // Chrome is already a requirement - so the same code runs on a Mac and on Windows with nothing extra to install.
 
 const run = promisify(execFile);
-const FFMPEG = process.env.FLOW_MCP_FFMPEG ?? "ffmpeg";
-const FFPROBE = process.env.FLOW_MCP_FFPROBE ?? "ffprobe";
-const WHISPER = process.env.FLOW_MCP_WHISPER ?? "whisper-cli";
+const FFMPEG = process.env.VIDS_MCP_FFMPEG ?? "ffmpeg";
+const FFPROBE = process.env.VIDS_MCP_FFPROBE ?? "ffprobe";
+const WHISPER = process.env.VIDS_MCP_WHISPER ?? "whisper-cli";
 // Transcripts and preview stills; the panel is allowed to show pictures from here.
 export const CACHE_DIR = join(HOME_DIR, "captions");
 const MODEL_DIR = join(HOME_DIR, "models");
 // Speech models fetched the first time they are needed, from whisper.cpp's own collection on Hugging Face
-// (FLOW_MCP_MODEL_BASE points at a mirror folder holding the same files). The sizes are what the panel tells the user.
+// (VIDS_MCP_MODEL_BASE points at a mirror folder holding the same files). The sizes are what the panel tells the user.
 const SPEECH_MODELS = {
   // English: base.en, an English-only model; those time words best (see PREFERENCE).
   english: { file: "ggml-base.en.bin", mb: 148, purpose: "for English" },
@@ -36,7 +36,7 @@ const SPEECH_MODELS = {
   detect: { file: "ggml-base-q5_1.bin", mb: 60, purpose: "that recognises the language" },
 } as const;
 type SpeechModel = keyof typeof SPEECH_MODELS;
-const MODEL_BASE = (process.env.FLOW_MCP_MODEL_BASE ?? "https://huggingface.co/ggerganov/whisper.cpp/resolve/main").replace(/\/+$/, "");
+const MODEL_BASE = (process.env.VIDS_MCP_MODEL_BASE ?? "https://huggingface.co/ggerganov/whisper.cpp/resolve/main").replace(/\/+$/, "");
 const BIG = { maxBuffer: 64 * 1024 * 1024 };
 const THREADS = String(Math.max(2, Math.min(8, cpus().length - 1)));
 type RunError = NodeJS.ErrnoException & { stderr?: string };
@@ -141,7 +141,7 @@ const installed = (kind: SpeechModel): string | undefined => PREFERENCE[kind].fl
 // The model that hears one language, downloaded the first time it is needed. English gets its own model even when a
 // multilingual one is there, for the timing; a multilingual model only stands in when that download fails.
 async function modelFor(lang: string): Promise<string> {
-  if (process.env.FLOW_MCP_WHISPER_MODEL) return process.env.FLOW_MCP_WHISPER_MODEL;
+  if (process.env.VIDS_MCP_WHISPER_MODEL) return process.env.VIDS_MCP_WHISPER_MODEL;
   if (lang !== "en") return installed("other") ?? fetchModel("other");
   const english = installed("english");
   if (english) return english;
@@ -155,7 +155,7 @@ async function modelFor(lang: string): Promise<string> {
 const WHISPER_HINT = IS_MAC
   ? "brew install whisper-cpp"
   : IS_WIN
-    ? "download whisper-cli from github.com/ggml-org/whisper.cpp/releases and put it on your PATH (or set FLOW_MCP_WHISPER)"
+    ? "download whisper-cli from github.com/ggml-org/whisper.cpp/releases and put it on your PATH (or set VIDS_MCP_WHISPER)"
     : "install whisper.cpp so whisper-cli is on your PATH";
 
 // What the panel needs to know before offering captions, and the fix for whatever is missing.
@@ -172,7 +172,7 @@ export async function captionSetup(): Promise<{
     () => true,
     (err: RunError) => err.code !== "ENOENT",
   );
-  const forced = Boolean(process.env.FLOW_MCP_WHISPER_MODEL);
+  const forced = Boolean(process.env.VIDS_MCP_WHISPER_MODEL);
   // The models are not a precondition: each downloads itself the first time it is needed. The panel uses these to say
   // how big the wait will be.
   const models = { english: forced || Boolean(installed("english")), other: forced || Boolean(installed("other")), detect: forced || Boolean(installed("detect")) };
@@ -351,7 +351,7 @@ export async function transcribe(video: string, language = "auto"): Promise<Tran
   const extract = () => run(FFMPEG, ["-v", "error", "-y", "-i", video, "-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav], BIG);
   try {
     let lang = asked;
-    if (lang === "auto" && !process.env.FLOW_MCP_WHISPER_MODEL) {
+    if (lang === "auto" && !process.env.VIDS_MCP_WHISPER_MODEL) {
       await extract();
       lang = await detectLanguage(wav);
     }

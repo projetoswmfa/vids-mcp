@@ -8,7 +8,7 @@ import { CACHE_DIR as CAPTIONS_DIR } from "./captions.js";
 import { HOME_DIR } from "./chrome.js";
 import { OUTPUT_ROOT, shapes, type Core } from "./core.js";
 
-export const PORT = Number(process.env.FLOW_MCP_PORT ?? 8787);
+export const PORT = Number(process.env.VIDS_MCP_PORT ?? 8788);
 export const TOKEN_FILE = join(HOME_DIR, "token");
 const UPLOAD_DIR = join(HOME_DIR, "uploads");
 const STUDIO_HTML = fileURLToPath(new URL("../studio/index.html", import.meta.url));
@@ -60,8 +60,8 @@ function sendMedia(req: IncomingMessage, res: ServerResponse, file: string) {
 
 export type ServerRole = "owner" | "client" | "none";
 
-// Serves the Studio panel and a JSON API on localhost. Returns "client" when another flow-mcp process already
-// owns the port (that process owns the Flow tab and the queue), "none" when the port is taken by something else.
+// Serves the Studio panel and a JSON API on localhost. Returns "client" when another vids-mcp process already
+// owns the port (that process owns the Vids tab and the queue), "none" when the port is taken by something else.
 export async function startServer(core: Core): Promise<ServerRole> {
   mkdirSync(UPLOAD_DIR, { recursive: true });
   const token = randomBytes(24).toString("hex");
@@ -73,7 +73,7 @@ export async function startServer(core: Core): Promise<ServerRole> {
       if (!allowedHosts.has(req.headers.host ?? "")) return json(res, 403, { error: "Bad host." });
       const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
 
-      if (req.method === "GET" && url.pathname === "/api/health") return json(res, 200, { name: "flow-mcp" });
+      if (req.method === "GET" && url.pathname === "/api/health") return json(res, 200, { name: "vids-mcp" });
       if (url.pathname === "/favicon.ico") return void res.writeHead(204).end();
       if (req.method === "GET" && url.pathname === "/") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
@@ -116,7 +116,7 @@ export async function startServer(core: Core): Promise<ServerRole> {
     return "owner";
   }
   // The port is taken. Who has it matters enormously: becoming a second LOCAL core means two processes drive the same
-  // Flow tab with separate queues, which is how a shot got generated and charged twice while flow_status reported an
+  // tab with separate queues, which is how a shot got generated and charged twice while flow_status reported an
   // empty queue (2026-09-20). Claude Desktop starts several of these at once and the owner is often still booting, or
   // busy inside a Playwright call, so one 2 s health check timing out proves nothing.
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -124,8 +124,8 @@ export async function startServer(core: Core): Promise<ServerRole> {
       (r) => r.json(),
       () => null,
     )) as { name?: string } | null;
-    if (other?.name === "flow-mcp") return "client";
-    // A valid answer from something that is NOT us means the port belongs to an unrelated program, and driving Flow
+    if (other?.name === "vids-mcp") return "client";
+    // A valid answer from something that is NOT us means the port belongs to an unrelated program, and driving Vids
     // locally is safe.
     if (other) return "none";
     await new Promise((r) => setTimeout(r, 1500));

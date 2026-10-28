@@ -5,11 +5,11 @@ import { promisify } from "node:util";
 import { HOME_DIR } from "./chrome.js";
 
 const run = promisify(execFile);
-const FFMPEG = process.env.FLOW_MCP_FFMPEG ?? "ffmpeg";
+const FFMPEG = process.env.VIDS_MCP_FFMPEG ?? "ffmpeg";
 const KEY_FILE = join(HOME_DIR, "gemini-key");
-const MODEL = process.env.FLOW_MCP_GEMINI_TTS ?? "gemini-2.5-flash-preview-tts";
+const MODEL = process.env.VIDS_MCP_GEMINI_TTS ?? "gemini-2.5-flash-preview-tts";
 
-// Gemini's prebuilt voices. Flow draws on the same set, so a narration made here matches one made in Flow.
+// Gemini's prebuilt voices.
 export const GEMINI_VOICES = [
   { name: "Zephyr", description: "bright" }, { name: "Puck", description: "upbeat" },
   { name: "Charon", description: "informative" }, { name: "Kore", description: "firm" },
@@ -60,7 +60,7 @@ interface TtsPart {
   inlineData?: { mimeType?: string; data?: string };
 }
 
-// Speaks a line with Gemini's TTS. Free tier, no Flow credits, no length cap, and the same voices Flow uses.
+// Speaks a line with Gemini's TTS. Free tier, no length cap.
 export async function speakWithGemini(text: string, voice: string, target: string, style?: string): Promise<{ output: string; duration: number }> {
   const key = geminiKey();
   if (!key) {
@@ -71,7 +71,7 @@ export async function speakWithGemini(text: string, voice: string, target: strin
         : `No Gemini key yet.\n\n`) +
         `1. Open aistudio.google.com/apikey and click "Create API key".\n` +
         `2. Copy the whole key (older keys start with AIza, newer ones with AQ).\n` +
-        `3. Paste it into Flow Studio: Voice tab -> Google AI Studio key -> Save key. It is checked with Google and saved\n` +
+        `3. Paste it into Vids Studio: Voice tab -> Google AI Studio key -> Save key. It is checked with Google and saved\n` +
         `   only on this computer - never paste it into a chat.`,
     );
   }

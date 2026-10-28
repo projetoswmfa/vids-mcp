@@ -5,33 +5,24 @@ export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 export interface SceneParams {
   prompt: string;
   type: "video" | "image";
-  max_credits: number;
-  duration?: 4 | 6 | 8 | 10;
-  resolution?: "360p" | "720p";
-  model?: string;
-  aspect_ratio?: "16:9" | "9:16" | "1:1" | "4:3" | "3:4";
-  variants?: number;
+  // The Vids video (one Google Vids document) this job works in.
+  project: string;
+  duration?: number;
+  resolution?: "720p" | "1080p";
+  aspect_ratio?: "16:9" | "9:16" | "1:1";
   first_frame?: string;
-  last_frame?: string;
   reference_images?: string[];
+  avatar?: string;
+  image_style?: "Fotografia" | "Fundo" | "Arte vetorial" | "Sketch" | "Aquarela" | "Cyberpunk" | "Sem estilo";
+  // Local clip files: Editar changes one, Estender carries one on.
+  edit_video?: string;
+  extend_video?: string;
   chain_from?: string;
   reference_from?: string;
-  edit_asset?: string;
-  agent_scenes?: string[];
-  // The scene number each agent scene is saved as. A retry of scenes 7 and 12 keeps scene-07 and scene-12; without it
-  // the numbers run on from file_stem.
-  agent_numbers?: number[];
-  // Reference images for an agent batch: attached once as ingredients in the agent composer (absolute paths, uploaded
-  // once, or "asset:<title>"), with a short name each, plus which of them every scene uses (names, per scene).
-  agent_refs?: { image: string; name: string }[];
-  agent_scene_refs?: string[][];
-  // Flow asset names of agent_refs after upload, so a retry round re-attaches without uploading again.
-  agent_ref_assets?: string[];
-  continue_from?: string;
-  attach?: string[];
-  continue_mode?: "exact" | "likeness";
+  // An image batch, made one after another; image_numbers keeps scene-07/scene-12 on a retry of just those.
+  image_scenes?: string[];
+  image_numbers?: number[];
   retries?: number;
-  download_quality?: "original" | "upscaled";
   output_dir: string;
   file_stem: string;
 }
@@ -42,11 +33,10 @@ export interface Job {
   params: SceneParams;
   files: string[];
   attempts: number;
-  credits?: number;
   progress?: string;
   note?: string;
   error?: string;
-  // Scene numbers a batch still could not make after all its own retries; flow_retry redoes just these.
+  // Scene numbers a batch still could not make after all its own retries; vids_retry redoes just these.
   failed_scenes?: number[];
   createdAt: string;
   finishedAt?: string;
@@ -54,10 +44,10 @@ export interface Job {
 
 export type JobRunner = (job: Job) => Promise<string[]>;
 
-// Flow is driven like a careful person would: one generation at a time, with a
+// Vids is driven like a careful person would: one generation at a time, with a
 // randomised pause between them.
-const PAUSE_MIN_MS = Number(process.env.FLOW_MCP_PAUSE_MIN_S ?? 25) * 1000;
-const PAUSE_MAX_MS = Number(process.env.FLOW_MCP_PAUSE_MAX_S ?? 70) * 1000;
+const PAUSE_MIN_MS = Number(process.env.VIDS_MCP_PAUSE_MIN_S ?? 25) * 1000;
+const PAUSE_MAX_MS = Number(process.env.VIDS_MCP_PAUSE_MAX_S ?? 70) * 1000;
 
 export class JobQueue {
   private jobs = new Map<string, Job>();
@@ -139,10 +129,9 @@ export class JobQueue {
           job.error = undefined;
         } catch (err) {
           job.error = err instanceof Error ? err.message : String(err);
-          // Failed tiles are already retried inside Flow (its own Retry button); only an agent that produced nothing
-          // is re-queued here. Timeouts are never retried automatically: they may still have spent credits.
-          const retryable = /agent finished without creating/i.test(job.error);
-          job.status = retryable && job.attempts <= (job.params.retries ?? 1) ? "queued" : "failed";
+          // A stuck generation is already cancelled and asked again inside the job. Nothing else is retried on its own:
+          // a failure after Gerar may still have used the account's Vids quota.
+          job.status = "failed";
         }
         job.finishedAt = new Date().toISOString();
         this.lastFinished = Date.now();
