@@ -4,6 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { extname, join } from "node:path";
 import type { FileChooser, Locator, Page } from "playwright-core";
 import { ensurePortuguese, getContext, getVidsPage, HOME_DIR, signedOut, VIDS_HOME, VIDS_NEW } from "./chrome.js";
+import { dropHead } from "./chain.js";
 import type { Job } from "./queue.js";
 
 export const UI = {
@@ -17,6 +18,8 @@ export const UI = {
   aiVideoButton: "Gerar um vídeo com IA",
   aiPanel: "Clipe de vídeo gerado com IA",
   tabs: { create: "Criar", edit: "Editar", animate: "Animar", extend: "Estender" },
+  switchTab: /^Mudar para /,
+  switchConfirm: "Mudar",
   ingredients: "Ingredientes",
   addElements: "Adicionar avatar ou elementos",
   upload: "Fazer upload",
@@ -179,12 +182,25 @@ async function startOwnScene(page: Page) {
   await page.waitForTimeout(3000);
 }
 
+// Switching tabs while the panel holds a prompt or media asks first (2026-10-28): an unnamed dialog "Mudar para
+// Estender? ... Ao alternar, o comando e os elementos serão apagados." with "Não mostrar novamente" (left alone, it is
+// the user's preference), "Cancelar" and "Mudar". Every clip starts from a cleared panel anyway, so it is confirmed.
+async function confirmTabSwitch(page: Page) {
+  const ask = page.getByRole("dialog").filter({ hasText: UI.switchTab });
+  if (await ask.waitFor({ state: "visible", timeout: 2500 }).then(() => true, () => false)) {
+    await ask.getByRole("button", { name: UI.switchConfirm, exact: true }).click();
+    await ask.waitFor({ state: "hidden" });
+  }
+}
+
 async function openAiPanel(page: Page, tab: Tab) {
+  await confirmTabSwitch(page);
   if (!(await aiPanel(page).isVisible().catch(() => false))) {
     await page.getByRole("button", { name: UI.aiVideoButton }).click();
     await aiPanel(page).waitFor({ state: "visible" });
   }
   await aiPanel(page).getByRole("tab", { name: UI.tabs[tab], exact: true }).click();
+  await confirmTabSwitch(page);
   const panel = tabPanel(page, tab);
   await panel.waitFor({ state: "visible" });
   // After a generation the form folds away under the result; "Abrir" unfolds it, and must come before "Limpar".
@@ -503,7 +519,21 @@ async function makeClip(job: Job): Promise<string> {
 
   if (url) {
     step("downloading the clip");
-    await saveUrl(page, url, target);
+    if (tab !== "extend") {
+      await saveUrl(page, url, target);
+      return target;
+    }
+    // Estender returns source + continuation in one file: keep that whole take as -full, and the new part alone as the clip.
+    const full = join(p.output_dir, `${p.file_stem}-full.mp4`);
+    await saveUrl(page, url, full);
+    step("cutting the new part away from the source clip");
+    const cut = await dropHead(full, p.extend_video!, target);
+    if (!cut) {
+      job.note = "Vids returned only the new part this time, so the clip is saved as it came.";
+      copyFileSync(full, target);
+      return target;
+    }
+    job.note = `Vids returned the source clip plus its continuation; ${p.file_stem}.mp4 is the new ${cut.kept} s only, ${p.file_stem}-full.mp4 the whole take.`;
     return target;
   }
   // The clip is in the document either way; without a direct address, the whole video is exported instead.

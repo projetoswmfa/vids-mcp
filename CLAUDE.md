@@ -50,7 +50,19 @@ Verified live through this code (e2e.mjs, project TesteVids):
   iframe (docs.google.com/picker): option `Fazer upload` → button `Procurar` → file chooser; the picker closes itself
   and the panel shows img "Visualização da imagem enviada" + button "Remover imagem". uploadThrough() handles it and
   still accepts a direct file chooser. The first run failed here BEFORE Gerar (no quota used).
-Ported from API - Vids-new (verified there 2026-10-22) and not yet re-run here: Criar with ingredients, cancel-and-retry on a stuck
-generation, Arquivo → Baixar MP4. New and unverified: the Editar / Estender uploads ("Adicionar vídeo", attached state
-assumed "Remover vídeo"), the Avatar picker (dialog "Avatares" → radio "<Nome>: …" → `Selecione`), the 1080p menu,
-and the home-screen video list. `scripts/probe*.mjs` attach to the vids-mcp Chrome for live mapping without generating.
+- Criar + 1 ingredient (paid 3 s): the still uploaded through the picker → scene-03.mp4, the same red boat in a new
+  place (a mossy stream). ~30 s of generation.
+- TAB SWITCH ASKS FIRST: clicking another tab with a prompt or media in the panel raises an unnamed dialog "Mudar para
+  Estender? Para estender, é necessário um elemento de vídeo. Ao alternar, o comando e os elementos serão apagados."
+  with "Não mostrar novamente", `Cancelar`, `Mudar`. It blocks every click until answered (the first vids_extend run
+  timed out on it before Gerar, no quota). confirmTabSwitch() presses Mudar and leaves the checkbox alone.
+- Estender (paid 3 s) from scene-02.mp4 → Vids returns ONE file of source + continuation (6.016 s, opening on the
+  source's first frame, ending on the new action). Saved as shot-NN-full.mp4, and dropHead() (chain.ts) cuts the
+  source's length off the front into shot-NN.mp4 (3.008 s), so an assembled film does not show the source twice.
+  This also applies to chain_previous scenes.
+- Editar (paid, 3 s source) on scene-03.mp4, "fim de tarde dourado" → edit-01.mp4, 3.008 s, same shot relit golden.
+  The "Adicionar vídeo" upload goes through the same picker; attached state matched /^Remover (imagem|vídeo)/.
+Ported from API - Vids-new (verified there 2026-10-22) and not yet re-run here: cancel-and-retry on a stuck
+generation, Arquivo → Baixar MP4. New and unverified: the Avatar picker (dialog "Avatares" → radio "<Nome>: …" →
+`Selecione`), the 1080p menu, 9:16, two or three ingredients at once, and the home-screen video list.
+`scripts/probe*.mjs` attach to the vids-mcp Chrome for live mapping without generating; `scripts/one.mjs` calls one tool.
