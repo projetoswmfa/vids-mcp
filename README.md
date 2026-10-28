@@ -30,6 +30,8 @@ O projeto precisa ficar **fora do Google Drive**: o npm não consegue gravar o `
 ficam vazios). Ele fica em `C:\Users\<você>\vids-mcp`.
 
 ```bash
+git clone https://github.com/projetoswmfa/vids-mcp.git
+cd vids-mcp
 npm install
 npm run build
 npm run login
@@ -41,13 +43,23 @@ nomes em pt-BR.
 
 ### No Claude (Claude Desktop / Claude Code)
 
+No Claude Code:
+
+```bash
+claude mcp add vids --scope user -- node "C:/Users/<você>/vids-mcp/dist/index.js"
+```
+
+Ou no arquivo de configuração do Claude Desktop:
+
 ```json
 {
   "mcpServers": {
-    "vids": { "command": "node", "args": ["C:/Users/User/vids-mcp/dist/index.js"] }
+    "vids": { "command": "node", "args": ["C:/Users/<você>/vids-mcp/dist/index.js"] }
   }
 }
 ```
+
+Troque `<você>` pelo seu usuário do Windows e reinicie o Claude.
 
 ### Painel sem o Claude
 
@@ -66,4 +78,21 @@ Portas e pastas próprias: painel na 8788, Chrome na porta CDP 9334, dados em `~
 
 O mapa completo da interface do Vids está em [VIDS-MAP.md](VIDS-MAP.md).
 
-Baseado no flow-mcp (driver do Google Flow); as partes de legenda, montagem, narração, fila e painel vieram de lá.
+## Aviso
+
+Este projeto não é do Google nem tem ligação com ele. Ele automatiza a interface do Google Vids **na sua própria conta**,
+e esse tipo de automação pode contrariar os termos de serviço do Google. Use por sua conta e risco.
+
+- Se o Google mostrar um aviso de atividade incomum ou pedir verificação, pare na hora e não tente contornar.
+  Insistir pode bloquear a conta.
+- O vids-mcp nunca digita sua senha: o login é sempre feito por você, no `npm run login`.
+- Cada clipe de vídeo usa a cota de geração da sua conta.
+
+## Créditos e licença
+
+Baseado no [flow-mcp](https://github.com/GTAI-1/flow-mcp), de GTAI-1 (driver do Google Flow). A fila, o painel, as
+legendas, a montagem e a narração vieram de lá, e os primeiros commits deste repositório são dele. O driver do Google
+Vids é novo.
+
+O flow-mcp não declara licença, então a licença deste repositório está **pendente da autorização do autor original**.
+Até lá, nenhuma licença de uso é concedida além do que o próprio GitHub permite (ver e fazer fork).

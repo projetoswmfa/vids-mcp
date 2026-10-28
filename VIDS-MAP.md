@@ -1,6 +1,6 @@
 # Mapa do Google Vids (vids.new)
 
-*Mapeado ao vivo em 28/10/2026, conta projetoswmfa (Assinatura do Google), interface em pt-BR.
+*Mapeado ao vivo em 28/10/2026, conta com Assinatura do Google, interface em pt-BR.
 Nenhuma geração foi disparada: nada gastou cota. O que depende de uma geração real está marcado como "a confirmar".*
 
 ## Como o Vids se organiza (diferença central para o Flow)

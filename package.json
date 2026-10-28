@@ -12,7 +12,7 @@
   },
   "keywords": [],
   "author": "projetoswmfa",
-  "license": "ISC",
+  "license": "UNLICENSED",
   "type": "module",
   "bin": {
     "vids-mcp": "dist/index.js"

@@ -17,11 +17,10 @@ queue, Studio panel, captions, assemble and narration came from there; the drive
 - Every video clip uses the account's Vids generation quota and Vids shows no price: get the user's OK first.
 - Never enter Google credentials; the user signs in by hand via `npm run login`.
 - No bot-detection evasion; drive the real UI at human pace.
-- Never push to the original flow-mcp repository (GTAI-1/flow-mcp). This is the user's own project; it has no remote
-  until the user picks one.
+- Never push to the original flow-mcp repository (GTAI-1/flow-mcp). This project's remote is projetoswmfa/vids-mcp.
 - Keep the project OFF Google Drive: npm's tar writes fail there (`TAR_ENTRY_ERROR`, 0-byte package.json files) and
-  Drive refuses junctions, so `node_modules` cannot live in or be linked from `G:\Meu Drive`. It lives in
-  `C:\Users\User\vids-mcp`.
+  Drive refuses junctions, so `node_modules` cannot live in or be linked from a Drive folder. Keep it in
+  `C:\Users\<you>\vids-mcp`.
 
 ## How Vids works (differences from Flow that shape the driver)
 
