@@ -24,7 +24,30 @@ os arquivos baixados.
 
 Todo clipe de vídeo usa a cota de geração do Google Vids da conta. O Vids não mostra preço antes de gerar.
 
-## Instalação (Windows)
+## Skill para o Claude Code: diretor de shorts editoriais
+
+O repositório traz a skill `diretor-de-shorts-editorial`, que conduz um short vertical (9:16, 15 a 60 s) do tema ao vídeo
+final:
+- tema, roteiro, paleta, pôsteres com tipografia e prompts de animação;
+- produção dos pôsteres e dos clipes no Google Vids por este MCP;
+- montagem com narração do ElevenLabs e efeitos sonoros sintetizados.
+
+Para instalar (requer Node 18+):
+
+```bash
+npx -y -p github:projetoswmfa/vids-mcp vids-mcp-skill
+```
+
+A skill vai para `~/.claude/skills/diretor-de-shorts-editorial`. Se já existir uma versão, ela é guardada ao lado com
+o sufixo `.bak-<data>`. Reinicie o Claude Code e peça um short. Na primeira vez, a skill confere o MCP `vids` e pede o
+seu login no Google Vids antes de começar. Se o MCP ainda não estiver instalado, ela oferece instalar.
+
+O que a montagem usa:
+- **ElevenLabs:** conector do ElevenLabs no Claude, para a narração;
+- **ffmpeg:** no PATH;
+- **Python:** com `numpy` e `scipy`.
+
+## Instalação do MCP (Windows)
 
 O projeto precisa ficar **fora do Google Drive**: o npm não consegue gravar o `node_modules` no Drive (os arquivos
 ficam vazios). Ele fica em `C:\Users\<você>\vids-mcp`.
