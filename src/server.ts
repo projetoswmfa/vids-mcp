@@ -11,6 +11,7 @@ import { CACHE_DIR as CAPTIONS_DIR } from "./captions.js";
 import { HOME_DIR } from "./chrome.js";
 import { OUTPUT_ROOT, shapes, type Core } from "./core.js";
 import { getOpenApiSpec } from "./openapi.js";
+import { handleWebLogin } from "./web-login.js";
 
 export const PORT = Number(process.env.VIDS_MCP_PORT ?? 8788);
 export const TOKEN_FILE = join(HOME_DIR, "token");
@@ -222,6 +223,8 @@ export async function startServer(core: Core, mcpFactory?: () => McpServer): Pro
       }
 
       if (OAUTH_PROBE.test(url.pathname)) return json(res, 404, { error: "Not found." });
+
+      if (await handleWebLogin(req, res, url)) return;
 
       const local = isLocal(req);
 
