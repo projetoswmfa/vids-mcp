@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { shapes, type Core } from "./core.js";
 import { doctor, widenPath } from "./doctor.js";
-import { mediaClean, mediaPull, mediaPush, startRetention } from "./media.js";
+import { mediaClean, mediaFetch, mediaPull, mediaPush, startRetention } from "./media.js";
 import { PLAYBOOK } from "./playbook.js";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -329,6 +329,22 @@ export function registerTools(server: McpServer, core: Core, studio?: string): v
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
     (args) => reply(patient("vids_media_push", mediaPush(args))),
+  );
+
+  server.registerTool(
+    "vids_media_fetch",
+    {
+      title: "Download a file onto the server",
+      description:
+        "Download a generated file from an https link into a project folder on this server, e.g. an ElevenLabs narration (storage.googleapis.com), so it can be used in vids_generate or sent back with vids_media_push. Only known media hosts are allowed (ElevenLabs, Google Storage, GitHub); VIDS_MCP_FETCH_HOSTS adds more. Max 200 MB.",
+      inputSchema: {
+        url: z.string().url().describe("https link to the file."),
+        project: z.string().min(1).describe("Project folder to save into."),
+        name: z.string().min(1).max(120).describe("File name with a media extension, e.g. narracao.mp3."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    (args) => reply(patient("vids_media_fetch", mediaFetch(args))),
   );
 
   server.registerTool(

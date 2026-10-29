@@ -10,7 +10,7 @@
 // needs in a temporary directory and deletes it afterwards. Pushed files are deleted locally by default, and with a
 // retention set, files older than VIDS_MCP_RETENTION_HOURS in the output and upload folders are removed every hour.
 import { execFile } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { HOME_DIR } from "./chrome.js";
@@ -217,6 +217,40 @@ export async function mediaPush({ project, files, delete_local = true }: { proje
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+// Hosts the server may download from with vids_media_fetch: where ElevenLabs, Google and GitHub serve generated files.
+const FETCH_HOSTS = ["storage.googleapis.com", "api.elevenlabs.io", "elevenlabs.io", "objects.githubusercontent.com", "release-assets.githubusercontent.com"].concat(
+  (process.env.VIDS_MCP_FETCH_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
+);
+const FETCH_MAX = 200 * 1024 * 1024;
+
+export async function mediaFetch({ url, project, name }: { url: string; project: string; name: string }) {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    throw new Error("Not a valid URL.");
+  }
+  if (u.protocol !== "https:") throw new Error("Only https URLs can be fetched.");
+  const host = u.hostname.toLowerCase();
+  if (!FETCH_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) {
+    throw new Error(`${host} is not an allowed download host (${FETCH_HOSTS.join(", ")}). Add it to VIDS_MCP_FETCH_HOSTS to allow it.`);
+  }
+  const file = slug(basename(name));
+  if (!MEDIA_EXT.has(extname(file).toLowerCase())) throw new Error(`Give the file a media extension (${[...MEDIA_EXT].join(" ")}).`);
+  const folder = projectDir(project);
+  if (!inside(join(folder, file), OUTPUT_ROOT)) throw new Error("Refusing to write outside the output folder.");
+  mkdirSync(folder, { recursive: true });
+  const res = await fetch(u, { redirect: "follow", signal: AbortSignal.timeout(120_000) });
+  if (!res.ok || !res.body) throw new Error(`Download answered ${res.status}.`);
+  const declared = Number(res.headers.get("content-length") ?? 0);
+  if (declared > FETCH_MAX) throw new Error(`File is over ${FETCH_MAX / 1048576} MB.`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > FETCH_MAX) throw new Error(`File is over ${FETCH_MAX / 1048576} MB.`);
+  const dest = join(folder, file);
+  writeFileSync(dest, buf);
+  return { path: dest, mb: mb(buf.length), content_type: res.headers.get("content-type") ?? undefined };
 }
 
 export async function mediaClean({ project, branch: alsoBranch = false }: { project?: string; branch?: boolean }) {
