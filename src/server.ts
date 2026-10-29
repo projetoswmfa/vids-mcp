@@ -50,7 +50,21 @@ const inside = (file: string, dir: string) => resolve(file).startsWith(resolve(d
 // The remote MCP endpoint lives at /mcp/<VIDS_MCP_PATH_SECRET>. claude.ai custom connectors cannot send a
 // Bearer token, so the unguessable path is the credential. Without a secret (or with a short one) the remote
 // MCP stays off and only local clients can use /sse.
-const PATH_SECRET = (process.env.VIDS_MCP_PATH_SECRET ?? "").trim();
+const SECRET_FILE = join(HOME_DIR, "path-secret");
+let loadedSecret = (process.env.VIDS_MCP_PATH_SECRET ?? "").trim();
+if (!loadedSecret && existsSync(SECRET_FILE)) {
+  try {
+    loadedSecret = readFileSync(SECRET_FILE, "utf8").trim();
+  } catch {}
+}
+if (!loadedSecret) {
+  loadedSecret = randomBytes(24).toString("base64url");
+  try {
+    mkdirSync(HOME_DIR, { recursive: true });
+    writeFileSync(SECRET_FILE, loadedSecret, { mode: 0o600 });
+  } catch {}
+}
+const PATH_SECRET = loadedSecret;
 const MIN_SECRET = 32;
 const REMOTE_MCP = /^[A-Za-z0-9_-]+$/.test(PATH_SECRET) && PATH_SECRET.length >= MIN_SECRET;
 
