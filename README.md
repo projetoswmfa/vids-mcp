@@ -116,6 +116,33 @@ https://vids-mcp.welldevs.com.br/openapi.json
 ```
 Se autenticação estiver ativada, configure o token Bearer correspondente.
 
+#### Troca de arquivos com o Claude (caixa de correio no GitHub)
+
+Quando o Claude roda na nuvem, ele e o servidor não se alcançam diretamente, mas os dois acessam o GitHub. Um
+repositório **privado** faz o papel de caixa de correio, com uma branch por projeto (`media/<projeto>`):
+
+- `in/` – o Claude envia (vídeo original, pôsteres). `vids_media_pull` traz para `~/vids-mcp-out/<projeto>/` no
+  servidor e tira da branch.
+- `out/` – `vids_media_push` manda os clipes prontos de volta e, por padrão, apaga a cópia do servidor.
+- `vids_media_clean` apaga a pasta do projeto no servidor e, com `branch: true`, a branch no GitHub.
+
+O servidor nunca guarda um clone: cada chamada faz um clone raso só da pasta necessária numa pasta temporária e apaga
+em seguida. Com a caixa configurada, arquivos com mais de 24 h em `~/vids-mcp-out` e `~/.vids-mcp/uploads` são
+apagados de hora em hora (`VIDS_MCP_RETENTION_HOURS`, 0 desliga). Os vídeos continuam salvos no Google Vids.
+
+Configuração, uma vez:
+
+1. Crie um repositório privado no GitHub (ex.: `vids-mcp-media`), com um README.
+2. Crie um token *fine-grained* (GitHub → Settings → Developer settings → Fine-grained tokens) só para esse
+   repositório, com **Contents: Read and write**.
+3. No serviço do vids-mcp:
+   ```
+   VIDS_MCP_MEDIA_REPO=<seu-usuario>/vids-mcp-media
+   VIDS_MCP_GITHUB_TOKEN=<token>
+   ```
+   (ou `VIDS_MCP_MEDIA_REMOTE=<URL git>` para usar uma deploy key SSH). Precisa de git 2.35 ou mais novo.
+4. Reinicie o vids-mcp.
+
 ### Painel sem o Claude
 
 Dois cliques em **Vids Studio.cmd** (Windows) ou **Vids Studio.command** (Mac), depois `http://127.0.0.1:8788`.
@@ -127,7 +154,9 @@ Portas e pastas próprias: painel na 8788, Chrome na porta CDP 9334, dados em `~
 
 ## Variáveis
 
-`VIDS_MCP_HOME`, `VIDS_MCP_OUTPUT`, `VIDS_MCP_PORT`, `VIDS_MCP_CDP_PORT`, `VIDS_MCP_CHROME`, `VIDS_MCP_HEADLESS=1`, `VIDS_MCP_SERVER_ONLY=1`, `VIDS_MCP_TOKEN`, `VIDS_MCP_PATH_SECRET` (caminho secreto do MCP remoto), `VIDS_MCP_ALLOWED_HOSTS`, `VIDS_MCP_CLIP_TIMEOUT_S`
+`VIDS_MCP_HOME`, `VIDS_MCP_OUTPUT`, `VIDS_MCP_PORT`, `VIDS_MCP_CDP_PORT`, `VIDS_MCP_CHROME`, `VIDS_MCP_HEADLESS=1`, `VIDS_MCP_SERVER_ONLY=1`, `VIDS_MCP_TOKEN`, `VIDS_MCP_PATH_SECRET` (caminho secreto do MCP remoto), `VIDS_MCP_MEDIA_REPO`, `VIDS_MCP_GITHUB_TOKEN`,
+`VIDS_MCP_MEDIA_REMOTE`, `VIDS_MCP_MEDIA_BRANCH_PREFIX` (padrão `media/`), `VIDS_MCP_RETENTION_HOURS` (caixa de correio e
+limpeza), `VIDS_MCP_ALLOWED_HOSTS`, `VIDS_MCP_CLIP_TIMEOUT_S`
 (espera por tentativa de clipe, padrão 240 s), `VIDS_MCP_PAUSE_MIN_S` / `VIDS_MCP_PAUSE_MAX_S` (pausa entre gerações),
 `VIDS_MCP_DEBUG=1` (passos no stderr).
 

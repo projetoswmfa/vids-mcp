@@ -7,6 +7,7 @@ queue, Studio panel, captions, assemble and narration came from there; the drive
 - `src/chrome.ts` launch/attach Chrome, pt-BR check · `src/vids.ts` UI driver (selectors in `UI`) · `src/queue.ts` paced job queue
 - `src/core.ts` tool logic + zod shapes (LocalCore) · `src/server.ts` localhost HTTP API + Studio page (port 8788) ·
   `src/remote.ts` RemoteCore · `src/index.ts` MCP tools (`vids_*`) · `src/studio.ts` standalone panel
+- `src/media.ts` GitHub mailbox (branch media/<project>, in/ and out/) behind vids_media_pull/push/clean + hourly retention
 - `studio/index.html` Studio UI · `src/assemble.ts`, `src/captions.ts`, `src/gemini.ts` local media · `src/playbook.ts` guidance returned by `vids_status`
 - `VIDS-MAP.md` the live map of the Vids UI. Test: `node scripts/e2e.mjs <project> '<scenes json>'`.
 

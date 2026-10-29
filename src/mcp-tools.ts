@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import { shapes, type Core } from "./core.js";
+import { mediaClean, mediaPull, mediaPush, startRetention } from "./media.js";
 import { PLAYBOOK } from "./playbook.js";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -293,4 +295,55 @@ export function registerTools(server: McpServer, core: Core, studio?: string): v
     },
     (args) => reply(patient("vids_captions", core.captions(args))),
   );
+
+  server.registerTool(
+    "vids_media_pull",
+    {
+      title: "Receive files from the mailbox",
+      description:
+        "Bring files sent to this server through the GitHub mailbox (in/ on branch media/<project> of VIDS_MCP_MEDIA_REPO) into the project folder here, then remove them from the branch. Returns the absolute paths to use in vids_generate (first_frame, reference_images), vids_edit or vids_extend. Also removes files older than the server's retention.",
+      inputSchema: {
+        project: z.string().min(1).describe("Project whose mailbox branch to read (media/<project>)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    (args) => reply(patient("vids_media_pull", mediaPull(args))),
+  );
+
+  server.registerTool(
+    "vids_media_push",
+    {
+      title: "Send files back through the mailbox",
+      description:
+        "Upload finished files from a project folder on this server to the GitHub mailbox (out/ on branch media/<project>), so the other side can download them. By default each file is deleted here once uploaded, to keep the server's disk free; pass delete_local: false for a file still needed here (e.g. a poster that will be a first_frame later).",
+      inputSchema: {
+        project: z.string().min(1).describe("Project whose folder the files are in."),
+        files: z
+          .array(z.string().min(1))
+          .max(100)
+          .optional()
+          .describe("File names in the project folder or absolute paths under the output folder. Default: every media file in the project folder."),
+        delete_local: z.boolean().default(true).describe("Delete each file on this server after it is uploaded. Default true."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    (args) => reply(patient("vids_media_push", mediaPush(args))),
+  );
+
+  server.registerTool(
+    "vids_media_clean",
+    {
+      title: "Free disk space on the server",
+      description:
+        "Delete a project's folder on this server and, with branch: true, its mailbox branch (media/<project>) on GitHub, when the project is done. Without a project it only runs the retention cleanup (files older than VIDS_MCP_RETENTION_HOURS). The videos stay in the Google Vids account.",
+      inputSchema: {
+        project: z.string().min(1).optional().describe("Project folder to delete."),
+        branch: z.boolean().default(false).describe("Also delete the project's mailbox branch on GitHub."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    (args) => reply(mediaClean(args)),
+  );
 }
+
+startRetention();
