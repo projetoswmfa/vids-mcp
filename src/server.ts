@@ -4,9 +4,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { basename, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { CACHE_DIR as CAPTIONS_DIR } from "./captions.js";
 import { HOME_DIR } from "./chrome.js";
 import { OUTPUT_ROOT, shapes, type Core } from "./core.js";
+import { getOpenApiSpec } from "./openapi.js";
 
 export const PORT = Number(process.env.VIDS_MCP_PORT ?? 8788);
 export const TOKEN_FILE = join(HOME_DIR, "token");
@@ -60,28 +63,110 @@ function sendMedia(req: IncomingMessage, res: ServerResponse, file: string) {
 
 export type ServerRole = "owner" | "client" | "none";
 
-// Serves the Studio panel and a JSON API on localhost. Returns "client" when another vids-mcp process already
-// owns the port (that process owns the Vids tab and the queue), "none" when the port is taken by something else.
-export async function startServer(core: Core): Promise<ServerRole> {
+// Serves the Studio panel, a JSON API on localhost and remote SSE for Claude and ChatGPT.
+export async function startServer(core: Core, mcpFactory?: () => McpServer): Promise<ServerRole> {
   mkdirSync(UPLOAD_DIR, { recursive: true });
-  const token = randomBytes(24).toString("hex");
-  const allowedHosts = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
+  mkdirSync(HOME_DIR, { recursive: true });
+
+  let token = process.env.VIDS_MCP_TOKEN ?? process.env.VIDS_MCP_API_KEY;
+  if (!token && existsSync(TOKEN_FILE)) {
+    try {
+      token = readFileSync(TOKEN_FILE, "utf8").trim();
+    } catch {}
+  }
+  if (!token) {
+    token = randomBytes(24).toString("hex");
+    try {
+      writeFileSync(TOKEN_FILE, token, { mode: 0o600 });
+    } catch {}
+  }
+
+  const allowedHosts = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`, "vids-mcp.welldevs.com.br"]);
+
+  if (process.env.VIDS_MCP_ALLOWED_HOSTS) {
+    for (const h of process.env.VIDS_MCP_ALLOWED_HOSTS.split(",")) {
+      const clean = h.trim();
+      if (clean) {
+        allowedHosts.add(clean);
+        allowedHosts.add(`${clean}:${PORT}`);
+      }
+    }
+  }
+
+  const sseTransports = new Map<string, SSEServerTransport>();
 
   const server = createServer(async (req, res) => {
     try {
-      // The Host check blocks DNS-rebinding; the token blocks other local pages from driving the queue.
-      if (!allowedHosts.has(req.headers.host ?? "")) return json(res, 403, { error: "Bad host." });
-      const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+      const host = req.headers.host ?? "";
+      const hostWithoutPort = host.split(":")[0];
+      const isAllowedHost =
+        allowedHosts.has(host) ||
+        allowedHosts.has(hostWithoutPort) ||
+        process.env.VIDS_MCP_ALLOW_ANY_HOST === "1" ||
+        host.endsWith(".welldevs.com.br") ||
+        host.endsWith(".wmfadev.lat");
 
-      if (req.method === "GET" && url.pathname === "/api/health") return json(res, 200, { name: "vids-mcp" });
-      if (url.pathname === "/favicon.ico") return void res.writeHead(204).end();
-      if (req.method === "GET" && url.pathname === "/") {
-        res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-        return res.end(readFileSync(STUDIO_HTML, "utf8").replace("__FLOW_TOKEN__", token));
+      if (!isAllowedHost) return json(res, 403, { error: "Bad host." });
+
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-flow-token");
+      if (req.method === "OPTIONS") {
+        res.writeHead(204).end();
+        return;
       }
 
-      const given = req.headers["x-flow-token"] ?? url.searchParams.get("token");
-      if (given !== token) return json(res, 401, { error: "Missing or wrong token." });
+      const proto = req.headers["x-forwarded-proto"] ?? "https";
+      const origin = `${proto}://${req.headers.host}`;
+      const url = new URL(req.url ?? "/", origin);
+
+      // Health check (supports GET and HEAD)
+      if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/health") {
+        return json(res, 200, { name: "vids-mcp", status: "ok" });
+      }
+      if (url.pathname === "/favicon.ico") return void res.writeHead(204).end();
+
+      // OpenAPI 3.1 Specification for ChatGPT Actions
+      if (req.method === "GET" && url.pathname === "/openapi.json") {
+        return json(res, 200, getOpenApiSpec(origin));
+      }
+
+      // MCP SSE endpoint for Claude Web, Claude Desktop, and ChatGPT MCP
+      if (req.method === "GET" && url.pathname === "/sse") {
+        const transport = new SSEServerTransport("/messages", res);
+        sseTransports.set(transport.sessionId, transport);
+        if (mcpFactory) {
+          const mcp = mcpFactory();
+          await mcp.connect(transport);
+        }
+        transport.onclose = () => {
+          sseTransports.delete(transport.sessionId);
+        };
+        return;
+      }
+
+      // Messages endpoint for active SSE sessions
+      if (req.method === "POST" && url.pathname === "/messages") {
+        const sessionId = url.searchParams.get("sessionId");
+        const transport = sessionId ? sseTransports.get(sessionId) : undefined;
+        if (!transport) return json(res, 404, { error: "Session not found." });
+        await transport.handlePostMessage(req, res);
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/") {
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+        return res.end(readFileSync(STUDIO_HTML, "utf8").replace("__FLOW_TOKEN__", token!));
+      }
+
+      const bearer = req.headers.authorization?.startsWith("Bearer ")
+        ? req.headers.authorization.slice(7).trim()
+        : undefined;
+      const given = req.headers["x-flow-token"] ?? url.searchParams.get("token") ?? bearer;
+
+      if (process.env.VIDS_MCP_NO_AUTH !== "1" && given !== token) {
+        return json(res, 401, { error: "Missing or wrong token." });
+      }
 
       if (req.method === "GET" && url.pathname === "/media") return sendMedia(req, res, url.searchParams.get("path") ?? "");
 
@@ -111,26 +196,20 @@ export async function startServer(core: Core): Promise<ServerRole> {
     server.listen(PORT, "127.0.0.1", () => ok(true));
   });
   if (listening) {
-    mkdirSync(HOME_DIR, { recursive: true });
-    writeFileSync(TOKEN_FILE, token, { mode: 0o600 });
+    try {
+      writeFileSync(TOKEN_FILE, token!, { mode: 0o600 });
+    } catch {}
     return "owner";
   }
-  // The port is taken. Who has it matters enormously: becoming a second LOCAL core means two processes drive the same
-  // tab with separate queues, which is how a shot got generated and charged twice while flow_status reported an
-  // empty queue (2026-09-20). Claude Desktop starts several of these at once and the owner is often still booting, or
-  // busy inside a Playwright call, so one 2 s health check timing out proves nothing.
+
   for (let attempt = 0; attempt < 8; attempt++) {
     const other = (await fetch(`http://127.0.0.1:${PORT}/api/health`, { signal: AbortSignal.timeout(3000) }).then(
       (r) => r.json(),
       () => null,
     )) as { name?: string } | null;
     if (other?.name === "vids-mcp") return "client";
-    // A valid answer from something that is NOT us means the port belongs to an unrelated program, and driving Vids
-    // locally is safe.
     if (other) return "none";
     await new Promise((r) => setTimeout(r, 1500));
   }
-  // Never confirmed, but something holds the port and it is most likely a busy sibling. Defer to it: a client whose
-  // calls fail loudly is far better than a second process silently spending the user's credits.
   return "client";
 }

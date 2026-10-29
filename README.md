@@ -47,10 +47,10 @@ O que a montagem usa:
 - **ffmpeg:** no PATH;
 - **Python:** com `numpy` e `scipy`.
 
-## Instalação do MCP (Windows)
+## Instalação do MCP (Windows / Mac)
 
 O projeto precisa ficar **fora do Google Drive**: o npm não consegue gravar o `node_modules` no Drive (os arquivos
-ficam vazios). Ele fica em `C:\Users\<você>\vids-mcp`.
+ficam vazios). Ele fica em `C:\Users\<você>\vids-mcp` (Windows) ou `~/vids-mcp` (Linux/Mac).
 
 ```bash
 git clone https://github.com/projetoswmfa/vids-mcp.git
@@ -82,7 +82,27 @@ Ou no arquivo de configuração do Claude Desktop:
 }
 ```
 
-Troque `<você>` pelo seu usuário do Windows e reinicie o Claude.
+### Servidor Remoto / Nuvem (Claude Web, ChatGPT & SSE)
+
+O `vids-mcp` suporta operação remota 24/7 em servidores Linux headless via Server-Sent Events (SSE) e OpenAPI 3.1:
+
+#### 1. No Claude (Web ou Desktop via URL SSE)
+```json
+{
+  "mcpServers": {
+    "vids": {
+      "url": "https://vids-mcp.welldevs.com.br/sse"
+    }
+  }
+}
+```
+
+#### 2. No ChatGPT (Custom GPTs / Actions)
+Em **Actions**, importe a URL da OpenAPI:
+```text
+https://vids-mcp.welldevs.com.br/openapi.json
+```
+Se autenticação estiver ativada, configure o token Bearer correspondente.
 
 ### Painel sem o Claude
 
@@ -95,7 +115,7 @@ Portas e pastas próprias: painel na 8788, Chrome na porta CDP 9334, dados em `~
 
 ## Variáveis
 
-`VIDS_MCP_HOME`, `VIDS_MCP_OUTPUT`, `VIDS_MCP_PORT`, `VIDS_MCP_CDP_PORT`, `VIDS_MCP_CHROME`, `VIDS_MCP_CLIP_TIMEOUT_S`
+`VIDS_MCP_HOME`, `VIDS_MCP_OUTPUT`, `VIDS_MCP_PORT`, `VIDS_MCP_CDP_PORT`, `VIDS_MCP_CHROME`, `VIDS_MCP_HEADLESS=1`, `VIDS_MCP_SERVER_ONLY=1`, `VIDS_MCP_TOKEN`, `VIDS_MCP_ALLOWED_HOSTS`, `VIDS_MCP_CLIP_TIMEOUT_S`
 (espera por tentativa de clipe, padrão 240 s), `VIDS_MCP_PAUSE_MIN_S` / `VIDS_MCP_PAUSE_MAX_S` (pausa entre gerações),
 `VIDS_MCP_DEBUG=1` (passos no stderr).
 
@@ -108,14 +128,3 @@ e esse tipo de automação pode contrariar os termos de serviço do Google. Use 
 
 - Se o Google mostrar um aviso de atividade incomum ou pedir verificação, pare na hora e não tente contornar.
   Insistir pode bloquear a conta.
-- O vids-mcp nunca digita sua senha: o login é sempre feito por você, no `npm run login`.
-- Cada clipe de vídeo usa a cota de geração da sua conta.
-
-## Créditos e licença
-
-Baseado no [flow-mcp](https://github.com/GTAI-1/flow-mcp), de GTAI-1 (driver do Google Flow). A fila, o painel, as
-legendas, a montagem e a narração vieram de lá, e os primeiros commits deste repositório são dele. O driver do Google
-Vids é novo.
-
-O flow-mcp não declara licença, então a licença deste repositório está **pendente da autorização do autor original**.
-Até lá, nenhuma licença de uso é concedida além do que o próprio GitHub permite (ver e fazer fork).

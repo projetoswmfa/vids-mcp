@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
@@ -47,9 +47,24 @@ export function chromeExecutable(): string {
 async function launchChrome(): Promise<void> {
   const chromePath = chromeExecutable();
   mkdirSync(PROFILE_DIR, { recursive: true });
+
+  if (existsSync(join(PROFILE_DIR, "SingletonLock")) && !(await cdpUp())) {
+    try {
+      rmSync(join(PROFILE_DIR, "SingletonLock"), { force: true });
+      rmSync(join(PROFILE_DIR, "SingletonCookie"), { force: true });
+      rmSync(join(PROFILE_DIR, "SingletonSocket"), { force: true });
+    } catch {}
+  }
+
+  const isLinuxHeadless = process.platform === "linux" && !process.env.DISPLAY;
+  const isHeadless = isLinuxHeadless || process.env.VIDS_MCP_HEADLESS === "1";
+  const headlessArgs = isHeadless
+    ? ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
+    : [];
+
   const child = spawn(
     chromePath,
-    [`--user-data-dir=${PROFILE_DIR}`, `--remote-debugging-port=${CDP_PORT}`, "--no-first-run", "--no-default-browser-check", VIDS_HOME],
+    [`--user-data-dir=${PROFILE_DIR}`, `--remote-debugging-port=${CDP_PORT}`, "--no-first-run", "--no-default-browser-check", ...headlessArgs, VIDS_HOME],
     { detached: true, stdio: "ignore" },
   );
   child.unref();
