@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { shapes, type Core } from "./core.js";
+import { doctor, widenPath } from "./doctor.js";
 import { mediaClean, mediaPull, mediaPush, startRetention } from "./media.js";
 import { PLAYBOOK } from "./playbook.js";
 
@@ -344,6 +345,19 @@ export function registerTools(server: McpServer, core: Core, studio?: string): v
     },
     (args) => reply(mediaClean(args)),
   );
+
+  server.registerTool(
+    "vids_doctor",
+    {
+      title: "Check the server's setup",
+      description:
+        "Read-only check of the machine vids-mcp runs on: whether ffmpeg, ffprobe, whisper-cli and git are found (and the folders searched), free disk, whether it runs in a container, and which optional features are set up (media mailbox, retention, speech models). Each missing program comes with the command that installs it. Call this when a tool says a program is missing.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+    },
+    () => reply(doctor()),
+  );
 }
 
+widenPath();
 startRetention();
