@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { basename, extname, join, resolve, sep } from "node:path";
@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CACHE_DIR as CAPTIONS_DIR } from "./captions.js";
 import { HOME_DIR } from "./chrome.js";
 import { OUTPUT_ROOT, shapes, type Core } from "./core.js";
@@ -45,6 +46,32 @@ function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
 }
 
 const inside = (file: string, dir: string) => resolve(file).startsWith(resolve(dir) + sep);
+
+// The remote MCP endpoint lives at /mcp/<VIDS_MCP_PATH_SECRET>. claude.ai custom connectors cannot send a
+// Bearer token, so the unguessable path is the credential. Without a secret (or with a short one) the remote
+// MCP stays off and only local clients can use /sse.
+const PATH_SECRET = (process.env.VIDS_MCP_PATH_SECRET ?? "").trim();
+const MIN_SECRET = 32;
+const REMOTE_MCP = /^[A-Za-z0-9_-]+$/.test(PATH_SECRET) && PATH_SECRET.length >= MIN_SECRET;
+
+function secretMatches(given: string): boolean {
+  if (!REMOTE_MCP) return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(PATH_SECRET);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+// A request is local when it reached the loopback listener directly, not through a reverse proxy or tunnel.
+function isLocal(req: IncomingMessage): boolean {
+  const host = req.headers.host ?? "";
+  const loopbackHost = host === `127.0.0.1:${PORT}` || host === `localhost:${PORT}`;
+  const proxied = Boolean(req.headers["x-forwarded-for"] || req.headers["x-forwarded-host"] || req.headers["cf-connecting-ip"] || req.headers["x-real-ip"]);
+  return loopbackHost && !proxied;
+}
+
+// OAuth discovery and registration paths claude.ai probes. Answering 404 (not 401) tells it the server has no
+// OAuth, so it connects without a login step instead of failing on dynamic client registration.
+const OAUTH_PROBE = /^\/(\.well-known\/.*|register|authorize|token|oauth\/.*)$/;
 
 function sendMedia(req: IncomingMessage, res: ServerResponse, file: string) {
   if (!(inside(file, OUTPUT_ROOT) || inside(file, UPLOAD_DIR) || inside(file, CAPTIONS_DIR)) || !existsSync(file)) return json(res, 404, { error: "Not found." });
@@ -94,6 +121,54 @@ export async function startServer(core: Core, mcpFactory?: () => McpServer): Pro
   }
 
   const sseTransports = new Map<string, SSEServerTransport>();
+  const httpTransports = new Map<string, StreamableHTTPServerTransport>();
+
+  if (process.env.VIDS_MCP_PATH_SECRET && !REMOTE_MCP) {
+    console.error(`vids-mcp: VIDS_MCP_PATH_SECRET ignored, it needs ${MIN_SECRET}+ characters of A-Z, a-z, 0-9, _ or -. Remote MCP is off.`);
+  } else if (!REMOTE_MCP) {
+    console.error("vids-mcp: remote MCP is off. Set VIDS_MCP_PATH_SECRET to serve it at /mcp/<secret>.");
+  }
+
+  // Legacy SSE (GET opens the stream, POST to `messagesPath` carries the messages).
+  const openSse = async (res: ServerResponse, messagesPath: string) => {
+    const transport = new SSEServerTransport(messagesPath, res);
+    sseTransports.set(transport.sessionId, transport);
+    transport.onclose = () => {
+      sseTransports.delete(transport.sessionId);
+    };
+    if (mcpFactory) await mcpFactory().connect(transport);
+  };
+  const postSse = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
+    const sessionId = url.searchParams.get("sessionId");
+    const transport = sessionId ? sseTransports.get(sessionId) : undefined;
+    if (!transport) return json(res, 404, { error: "Session not found." });
+    await transport.handlePostMessage(req, res);
+  };
+
+  // Streamable HTTP, the transport claude.ai tries first.
+  const handleStreamable = async (req: IncomingMessage, res: ServerResponse) => {
+    if (!mcpFactory) return json(res, 503, { error: "MCP is not available on this server." });
+    const sid = req.headers["mcp-session-id"];
+    const sessionId = Array.isArray(sid) ? sid[0] : sid;
+    let transport = sessionId ? httpTransports.get(sessionId) : undefined;
+    if (!transport) {
+      if (sessionId || req.method !== "POST") {
+        return json(res, 404, { jsonrpc: "2.0", error: { code: -32001, message: "Session not found." }, id: null });
+      }
+      const created: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (id) => {
+          httpTransports.set(id, created);
+        },
+      });
+      created.onclose = () => {
+        if (created.sessionId) httpTransports.delete(created.sessionId);
+      };
+      await mcpFactory().connect(created);
+      transport = created;
+    }
+    await transport.handleRequest(req, res);
+  };
 
   const server = createServer(async (req, res) => {
     try {
@@ -109,8 +184,9 @@ export async function startServer(core: Core, mcpFactory?: () => McpServer): Pro
       if (!isAllowedHost) return json(res, 403, { error: "Bad host." });
 
       res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-flow-token");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS, HEAD");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-flow-token, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID");
+      res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
       if (req.method === "OPTIONS") {
         res.writeHead(204).end();
         return;
@@ -131,30 +207,32 @@ export async function startServer(core: Core, mcpFactory?: () => McpServer): Pro
         return json(res, 200, getOpenApiSpec(origin));
       }
 
-      // MCP SSE endpoint for Claude Web, Claude Desktop, and ChatGPT MCP
-      if (req.method === "GET" && url.pathname === "/sse") {
-        const transport = new SSEServerTransport("/messages", res);
-        sseTransports.set(transport.sessionId, transport);
-        if (mcpFactory) {
-          const mcp = mcpFactory();
-          await mcp.connect(transport);
-        }
-        transport.onclose = () => {
-          sseTransports.delete(transport.sessionId);
-        };
-        return;
+      if (OAUTH_PROBE.test(url.pathname)) return json(res, 404, { error: "Not found." });
+
+      const local = isLocal(req);
+
+      // Remote MCP at /mcp/<secret>: Streamable HTTP on the base path, legacy SSE under /sse and /messages.
+      const remote = url.pathname.match(/^\/mcp\/([^/]+)(\/sse|\/messages)?$/);
+      if (remote) {
+        if (!secretMatches(remote[1])) return json(res, 404, { error: "Not found." });
+        const base = `/mcp/${PATH_SECRET}`;
+        if (!remote[2]) return void (await handleStreamable(req, res));
+        if (remote[2] === "/sse" && req.method === "GET") return void (await openSse(res, `${base}/messages`));
+        if (remote[2] === "/messages" && req.method === "POST") return void (await postSse(req, res, url));
+        return json(res, 405, { error: "Method not allowed." });
       }
 
-      // Messages endpoint for active SSE sessions
-      if (req.method === "POST" && url.pathname === "/messages") {
-        const sessionId = url.searchParams.get("sessionId");
-        const transport = sessionId ? sseTransports.get(sessionId) : undefined;
-        if (!transport) return json(res, 404, { error: "Session not found." });
-        await transport.handlePostMessage(req, res);
-        return;
+      // Unprefixed MCP endpoints only for clients on this machine.
+      if (url.pathname === "/sse" || url.pathname === "/messages") {
+        if (!local) return json(res, 404, { error: "Not found." });
+        if (url.pathname === "/sse" && req.method === "GET") return void (await openSse(res, "/messages"));
+        if (url.pathname === "/messages" && req.method === "POST") return void (await postSse(req, res, url));
+        return json(res, 405, { error: "Method not allowed." });
       }
 
+      // The Studio page embeds the API token, so it is served on the loopback listener only.
       if (req.method === "GET" && url.pathname === "/") {
+        if (!local) return json(res, 404, { error: "Not found." });
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
         return res.end(readFileSync(STUDIO_HTML, "utf8").replace("__FLOW_TOKEN__", token!));
       }

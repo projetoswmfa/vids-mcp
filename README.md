@@ -84,18 +84,30 @@ Ou no arquivo de configuração do Claude Desktop:
 
 ### Servidor Remoto / Nuvem (Claude Web, ChatGPT & SSE)
 
-O `vids-mcp` suporta operação remota 24/7 em servidores Linux headless via Server-Sent Events (SSE) e OpenAPI 3.1:
+O `vids-mcp` suporta operação remota 24/7 em servidores Linux headless via Streamable HTTP, SSE e OpenAPI 3.1.
 
-#### 1. No Claude (Web ou Desktop via URL SSE)
-```json
-{
-  "mcpServers": {
-    "vids": {
-      "url": "https://vids-mcp.welldevs.com.br/sse"
-    }
-  }
-}
+#### 1. No Claude (claude.ai, app ou Desktop)
+
+O conector personalizado do claude.ai não envia token Bearer, então o MCP remoto fica num **caminho secreto**. Gere um
+segredo (32+ caracteres de A–Z, a–z, 0–9, `_` ou `-`) e inicie o servidor com ele:
+
+```bash
+export VIDS_MCP_PATH_SECRET="$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")"
+VIDS_MCP_SERVER_ONLY=1 VIDS_MCP_HEADLESS=1 node dist/index.js
 ```
+
+No claude.ai, em **Configurações → Conectores → Adicionar conector personalizado**, use:
+
+```text
+https://vids-mcp.welldevs.com.br/mcp/<seu-segredo>
+```
+
+Deixe os campos de OAuth em branco. O mesmo caminho atende SSE em `/mcp/<seu-segredo>/sse`. Trate essa URL como uma
+senha: quem tiver a URL controla o Vids na sua conta Google. Para trocar, mude o segredo, reinicie e recadastre o conector.
+
+Sem `VIDS_MCP_PATH_SECRET`, o MCP remoto fica desligado. `/sse`, `/messages` e o painel (`/`, que contém o token da API)
+só respondem a quem acessa direto pela porta local, nunca pelo domínio público. As rotas de OAuth
+(`/.well-known/*`, `/register`) respondem 404, para o claude.ai conectar sem pedir login.
 
 #### 2. No ChatGPT (Custom GPTs / Actions)
 Em **Actions**, importe a URL da OpenAPI:
@@ -115,7 +127,7 @@ Portas e pastas próprias: painel na 8788, Chrome na porta CDP 9334, dados em `~
 
 ## Variáveis
 
-`VIDS_MCP_HOME`, `VIDS_MCP_OUTPUT`, `VIDS_MCP_PORT`, `VIDS_MCP_CDP_PORT`, `VIDS_MCP_CHROME`, `VIDS_MCP_HEADLESS=1`, `VIDS_MCP_SERVER_ONLY=1`, `VIDS_MCP_TOKEN`, `VIDS_MCP_ALLOWED_HOSTS`, `VIDS_MCP_CLIP_TIMEOUT_S`
+`VIDS_MCP_HOME`, `VIDS_MCP_OUTPUT`, `VIDS_MCP_PORT`, `VIDS_MCP_CDP_PORT`, `VIDS_MCP_CHROME`, `VIDS_MCP_HEADLESS=1`, `VIDS_MCP_SERVER_ONLY=1`, `VIDS_MCP_TOKEN`, `VIDS_MCP_PATH_SECRET` (caminho secreto do MCP remoto), `VIDS_MCP_ALLOWED_HOSTS`, `VIDS_MCP_CLIP_TIMEOUT_S`
 (espera por tentativa de clipe, padrão 240 s), `VIDS_MCP_PAUSE_MIN_S` / `VIDS_MCP_PAUSE_MAX_S` (pausa entre gerações),
 `VIDS_MCP_DEBUG=1` (passos no stderr).
 
